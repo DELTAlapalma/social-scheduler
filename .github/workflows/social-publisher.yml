@@ -1,0 +1,80 @@
+name: 📢 Social Publisher - Proyecto Delta
+
+on:
+  # Ejecutar cada 6 horas
+  schedule:
+    - cron: "0 */6 * * *"
+
+  # Ejecución manual desde GitHub Actions
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Forzar publicación (ignorar log de publicados)"
+        required: false
+        default: "false"
+        type: boolean
+
+jobs:
+  publish:
+    name: Publicar en Redes Sociales
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write   # Para guardar published_posts.json en el repo
+
+    steps:
+      # ── 1. Checkout del repositorio ──────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── 2. Configurar Python ─────────────────────────────────────────────
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scripts/requirements.txt
+
+      # ── 3. Instalar dependencias ──────────────────────────────────────────
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      # ── 4. Si se fuerza, borrar el log de publicados ──────────────────────
+      - name: Reset published log (force mode)
+        if: ${{ inputs.force == 'true' }}
+        run: |
+          echo '{"published_ids": []}' > published_posts.json
+          echo "⚠️  Modo forzado: se ignorará el historial de posts publicados"
+
+      # ── 5. Ejecutar el publisher ──────────────────────────────────────────
+      - name: Run Social Publisher
+        env:
+          # ── Claude / Anthropic (opcional, para textos con IA) ──
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+          # ── Twitter / X ───────────────────────────────────────
+          TWITTER_API_KEY:        ${{ secrets.TWITTER_API_KEY }}
+          TWITTER_API_SECRET:     ${{ secrets.TWITTER_API_SECRET }}
+          TWITTER_ACCESS_TOKEN:   ${{ secrets.TWITTER_ACCESS_TOKEN }}
+          TWITTER_ACCESS_SECRET:  ${{ secrets.TWITTER_ACCESS_SECRET }}
+
+          # ── LinkedIn ──────────────────────────────────────────
+          LINKEDIN_ACCESS_TOKEN:  ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
+          LINKEDIN_PERSON_URN:    ${{ secrets.LINKEDIN_PERSON_URN }}
+
+          # ── Facebook ──────────────────────────────────────────
+          FACEBOOK_PAGE_TOKEN:    ${{ secrets.FACEBOOK_PAGE_TOKEN }}
+          FACEBOOK_PAGE_ID:       ${{ secrets.FACEBOOK_PAGE_ID }}
+
+        run: python scripts/publisher.py
+
+      # ── 6. Guardar el log de posts publicados en el repo ─────────────────
+      - name: Save published posts log
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add published_posts.json
+          git diff --staged --quiet || git commit -m "chore: update published posts log [skip ci]"
+          git push
